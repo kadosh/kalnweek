@@ -14,15 +14,34 @@ String.prototype.format = function () {
         ;
     });
 };
+
 (function ($) {
+    function getDateOfISOWeek(w, y) {
+        var simple = new Date(y, 0, 1 + (w - 1) * 7);
+        var dow = simple.getDay();
+        var ISOweekStart = simple;
+        if (dow <= 4)
+            ISOweekStart.setDate(simple.getDate() - simple.getDay() + 1);
+        else
+            ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
+        return ISOweekStart;
+    }
+
+    function convertWeekToComparable(y, w) {
+        return (y + ((w) / 54))
+    }
+
     $.widget("ui.kalnweek", {
         options: {
             autoOpen: true,
             monthStartindex: 0,
             yearsCount: 3,
             monthsCount: 3,
-            yearFromConstraint: 2014,
-            yearToConstraint: 2014
+            startYear: undefined,
+            startMonth: undefined,
+            startWeek: undefined,
+            constraintStartDate: undefined,
+            constraintEndDate: undefined
         },
         _eventsSet: false,
         _weekLinkFormat: "<a href='javascript:;' data-year='{1}' data-month='{2}' data-week='{3}' class='{4}'>{0}</a>",
@@ -33,6 +52,9 @@ String.prototype.format = function () {
         _selectedMonth: 0,
         _selectedWeek: 0,
 
+        getSelection: function () {
+            return { yearNumber: this._selectedYear, monthNumber: this._selectedMonth, weekNumber: this._selectedWeek };
+        },
         _create: function () {
             // by default, consider this thing closed.
             this._isOpen = false;
@@ -61,21 +83,46 @@ String.prototype.format = function () {
                 this.open();
             }
 
-            var today = new Date(),
-                initYear = today.getFullYear(),
-                initMonth = today.getMonth();
+            var firstToday = new Date();
+
+            //console.log(this.options);
+
+            if (this.options.startWeek && this.options.startYear) {
+
+                var firstDayInInitials = getDateOfISOWeek(this.options.startWeek, this.options.startYear);
+
+                // TODO: We need to check constraint end date
+                if (this.options.constraintStartDate && (firstDayInInitials.valueOf() >= this.options.constraintStartDate.valueOf())) {
+                    firstToday = getDateOfISOWeek(this.options.startWeek, this.options.startYear);
+                }
+                else {
+                    firstToday = this.options.constraintStartDate;
+                }
+            } else {
+                if (this.options.constraintStartDate) {
+                    firstToday = this.options.constraintStartDate;
+                }
+            }
+
+            var initYear = firstToday.getFullYear(),
+                initMonth = this.options.startMonth || firstToday.getMonth(),
+                initWeek = firstToday.getWeekNumber();
+
+            //console.log(this.options,initYear, initMonth, initWeek);
 
             // Set init selected values
             this._selectedYear = initYear;
             this._selectedMonth = initMonth;
-            this._selectedWeek = today.getWeekNumber();
+            this._selectedWeek = initWeek;
 
+            this._trigger("selectweek", event, { yearNumber: this._selectedYear, monthNumber: this._selectedMonth, weekNumber: this._selectedWeek });
+
+            //console.log(initYear, initMonth);
 
             // Render initial week selector
             this._renderYearSection(initYear);
             this._renderMonthSection(initYear, initMonth);
             this._renderWeekSection(initYear, initMonth);
-
 
             this._on(this.element, {
                 'click .kalnweek-year-container .kalnweek-year-table td a': function (event) {
@@ -103,8 +150,6 @@ String.prototype.format = function () {
                 }
             });
 
-            alert("there");
-
             this._on(this.element, {
                 'click .kalnweek-week-container .kalnweek-week-table td a': function (event) {
                     event.preventDefault();
@@ -113,15 +158,15 @@ String.prototype.format = function () {
                         monthNumber = $currentTarget.attr('data-month'),
                         weekNumber = $currentTarget.attr('data-week');
 
-                    $('.kalnweek-week-container .kalnweek-week-table td a').parent().removeClass('selected').removeClass('today');
-                    $currentTarget.parent().addClass('today').addClass('selected');
-                    this.selectWeek(parseInt(yearNumber), parseInt(monthNumber), parseInt(weekNumber));
+                    if (!$currentTarget.parent().hasClass('disabled')) {
+                        $('.kalnweek-week-container .kalnweek-week-table td a').parent().removeClass('selected').removeClass('today');
+                        $currentTarget.parent().addClass('today').addClass('selected');
+                        this.selectWeek(event, parseInt(yearNumber), parseInt(monthNumber), parseInt(weekNumber));
+                    }
                 }
             });
 
-
-
-            console.log(this._trigger('afterinit'));
+            this._trigger('ready');
         },
         _getWeekFirstWeekOnMonth: function (yearNumber, monthNumber) {
             return (new Date(yearNumber, monthNumber)).getWeekNumber();
@@ -138,14 +183,72 @@ String.prototype.format = function () {
 
             return number;
         },
+        _renderWeekTd: function (weekNumber, yearNumber, monthNumber) {
+            var disableWeek = false;
+
+            var currentWeek = convertWeekToComparable(yearNumber, weekNumber),
+                constraintStartWeek = 0,
+                constraintStartYear = 0,
+                constraintEndWeek = 0,
+                constraintEndYear = 0,
+                constraintStart = 0,
+                constraintEnd = 0;
+
+            //console.log(yearToCompare, yearNumber, monthNumber, nonSafeMonthNumber, safeMonthNumber);
+
+            if (this.options.constraintStartDate && !this.options.constraintEndDate) {
+                constraintStartWeek = this.options.constraintStartDate.getWeekNumber();
+                constraintStartYear = this.options.constraintStartDate.getFullYear();
+
+                constraintStart = convertWeekToComparable(constraintStartYear, constraintStartWeek);
+
+                // Disable if month and year is not greater than the limit
+                disableWeek = !(currentWeek >= constraintStart);
+            } else {
+                if (!this.options.constraintStartDate && this.options.constraintEndDate) {
+
+                    constraintEndWeek = this.options.constraintEndDate.getWeekNumber();
+                    constraintEndYear = this.options.constraintEndDate.getFullYear();
+
+                    constraintEnd = convertWeekToComparable(constraintEndYear, constraintEndWeek);
+
+                    // Disable if year is not greater than the limit
+                    disableWeek = !(currentWeek <= constraintEnd);
+                } else {
+                    if (this.options.constraintStartDate && this.options.constraintEndDate) {
+                        constraintEndWeek = this.options.constraintEndDate.getWeekNumber();
+                        constraintEndYear = this.options.constraintEndDate.getFullYear();
+
+                        constraintStartWeek = this.options.constraintStartDate.getWeekNumber();
+                        constraintStartYear = this.options.constraintStartDate.getFullYear();
+
+                        constraintStart = convertWeekToComparable(constraintStartYear, constraintStartWeek);
+                        constraintEnd = convertWeekToComparable(constraintEndYear, constraintEndWeek);
+
+                        disableWeek = !(currentWeek >= constraintStart && currentWeek <= constraintEnd);
+                    }
+                }
+            }
+
+            if (disableWeek) {
+                return '<td class="disabled">' + this._weekLinkFormat.format(weekNumber, yearNumber, monthNumber, weekNumber, '') + '</td>';
+            }
+            else {
+                return '<td class="{0}">'.format(weekNumber == this._selectedWeek ? 'today selected' : '') + this._weekLinkFormat.format(weekNumber, yearNumber, monthNumber, weekNumber, '') + '</td>';
+            }
+        },
         _renderWeekSection: function (yearNumber, monthNumber) {
             var startDate = new Date(yearNumber, monthNumber);
 
             var weeks = [];
 
-            for (var i = new Date(startDate.valueOf()) ; i.getMonth() <= startDate.getMonth() ;) {
-                weeks.push(i.getWeekNumber());
-                i.setDate(i.getDate() + 7)
+            for (var i = new Date(startDate.valueOf()) ; i.getMonth() <= startDate.getMonth() && i.getFullYear() == startDate.getFullYear() ;) {
+                var weekToBeInserted = i.getWeekNumber();
+                i.setDate(i.getDate() + 7);
+
+                if (i.getFullYear() == startDate.getFullYear()) {
+                    weeks.push(weekToBeInserted);
+                }
             }
 
             var htmlInside = '',
@@ -153,39 +256,84 @@ String.prototype.format = function () {
 
             for (var i = 0; i < weeks.length; i++) {
                 weekNumber = weeks[i];
-                htmlInside += '<td class="{0}">'.format(weekNumber == this._selectedWeek ? 'today selected' : '') + this._weekLinkFormat.format(weekNumber, yearNumber, monthNumber, weekNumber, '') + '</td>';
+                htmlInside += this._renderWeekTd(weekNumber, yearNumber, monthNumber);
             }
 
             $('.kalnweek-week-container .kalnweek-week-table', this.element).html('<tr>' + htmlInside + '</tr>');
         },
         _renderYearTd: function (yearNumber, yearIterator) {
+            var disableYear = false;
 
-            if (this.options.yearFromConstraint && this.options.yearToConstraint) {
-                if (yearIterator >= this.options.yearFromConstraint && yearIterator <= this.options.yearToConstraint) {
-                    return '<td class="{0}">'.format(yearIterator == this._selectedYear ? 'today selected' : '') + this._yearLinkFormat.format(yearIterator, yearIterator, '') + '</td>';
-                }
-                else {
-                    return '<td class="{0}">'.format('disabled') + this._yearLinkFormat.format(yearIterator, yearIterator, '') + '</td>';
+            if (this.options.constraintStartDate && !this.options.constraintEndDate) {
+                // Disable if year is not greater than the limit
+                disableYear = !(yearIterator >= this.options.constraintStartDate.getFullYear())
+            } else {
+                if (!this.options.constraintStartDate && this.options.constraintEndDate) {
+                    // Disable if year is not greater than the limit
+                    disableYear = !(yearIterator <= this.options.constraintStartDate.getFullYear())
+                } else {
+                    if (this.options.constraintStartDate && this.options.constraintEndDate) {
+                        // Disable if year is not in the range
+                        disableYear = !(yearIterator >= this.options.constraintStartDate.getFullYear() && yearIterator <= this.options.constraintEndDate.getFullYear());
+                    }
                 }
             }
 
-            return '<td class="{0}">'.format(yearIterator == this._selectedYear ? 'today selected' : '') + this._yearLinkFormat.format(yearIterator, yearIterator, '') + '</td>';
+            if (disableYear) {
+                return '<td class="{0}">'.format('disabled') + this._yearLinkFormat.format(yearIterator, yearIterator, '') + '</td>';
+            }
+            else {
+                return '<td class="{0}">'.format(yearIterator == this._selectedYear ? 'today selected' : '') + this._yearLinkFormat.format(yearIterator, yearIterator, '') + '</td>';
+            }
         },
 
         _renderMonthTd: function (yearNumber, monthNumber, nonSafeMonthNumber, safeMonthNumber) {
+            var disableMonth = false;
 
-            var yearToCompare = nonSafeMonthNumber < 0 ? yearNumber - 1 : yearNumber;
+            var yearToCompare = yearNumber;
 
-            if (this.options.yearFromConstraint && this.options.yearToConstraint) {
-                if (yearToCompare >= this.options.yearFromConstraint && yearToCompare <= this.options.yearToConstraint) {
-                    return '<td class="{0}">'.format(safeMonthNumber == this._selectedMonth ? 'today selected' : '') + this._monthLinkFormat.format(this._monthShorts[safeMonthNumber], yearToCompare, safeMonthNumber, '') + '</td>';
-                }
-                else {
-                    return '<td class="disabled">' + this._monthLinkFormat.format(this._monthShorts[safeMonthNumber], yearToCompare, safeMonthNumber, '') + '</td>';
+            if (nonSafeMonthNumber < 0) {
+                yearToCompare = yearNumber - 1;
+            }
+            else {
+                if (nonSafeMonthNumber > this.options.monthStartindex + 11) {
+                    yearToCompare = yearNumber + 1;
                 }
             }
 
-            return '<td class="{0}">'.format(safeMonthNumber == this._selectedMonth ? 'today selected' : '') + this._monthLinkFormat.format(this._monthShorts[safeMonthNumber], yearToCompare, safeMonthNumber, '') + '</td>';
+            //console.log(yearToCompare, yearNumber, monthNumber, nonSafeMonthNumber, safeMonthNumber);
+
+            if (this.options.constraintStartDate && !this.options.constraintEndDate) {
+                // Disable if month and year is not greater than the limit
+                disableMonth = !(yearToCompare >= this.options.constraintStartDate.getFullYear() && safeMonthNumber >= this.options.constraintEndDate.getMonth())
+            } else {
+                if (!this.options.constraintStartDate && this.options.constraintEndDate) {
+                    // Disable if year is not greater than the limit
+                    disableMonth = !(yearToCompare <= this.options.constraintStartDate.getFullYear() && safeMonthNumber <= this.options.constraintEndDate.getMonth())
+                } else {
+                    if (this.options.constraintStartDate && this.options.constraintEndDate) {
+
+                        var constraintStartYear = this.options.constraintStartDate.getFullYear(),
+                            constraintStartMonth = this.options.constraintStartDate.getMonth(),
+                            constraintEndYear = this.options.constraintEndDate.getFullYear(),
+                            constraintEndMonth = this.options.constraintEndDate.getMonth();
+
+                        var constraintStart = constraintStartYear + ((constraintStartMonth + 1) / 12),
+                            constraintEnd = constraintEndYear + ((constraintEndMonth + 1) / 12);
+
+                        var current = yearToCompare + ((safeMonthNumber + 1) / 12);
+
+                        disableMonth = !(current >= constraintStart && current <= constraintEnd);
+                    }
+                }
+            }
+
+            if (disableMonth) {
+                return '<td class="disabled">' + this._monthLinkFormat.format(this._monthShorts[safeMonthNumber], yearToCompare, safeMonthNumber, '') + '</td>';
+            }
+            else {
+                return '<td class="{0}">'.format(safeMonthNumber == this._selectedMonth ? 'today selected' : '') + this._monthLinkFormat.format(this._monthShorts[safeMonthNumber], yearToCompare, safeMonthNumber, '') + '</td>';
+            }
         },
         _renderMonthSection: function (yearNumber, monthNumber) {
             var newHtml = '';
@@ -193,6 +341,7 @@ String.prototype.format = function () {
                 endMonth = monthNumber + ((this.options.monthsCount - 1) / 2);
 
             for (var i = startMonth; i <= endMonth; i++) {
+                //console.log(i);
                 var safeMonthNumber = this._getSafeMonthNumber(i);
 
                 newHtml += this._renderMonthTd(yearNumber, monthNumber, i, safeMonthNumber);
@@ -222,28 +371,32 @@ String.prototype.format = function () {
                 this._renderYearSection(yearNumber);
                 this._renderMonthSection(yearNumber, this.options.monthStartindex);
                 this._renderWeekSection(yearNumber, this.options.monthStartindex);
+
+                this._trigger("selectweek", event, { yearNumber: this._selectedYear, monthNumber: this._selectedMonth, weekNumber: this._selectedWeek });
             }
         },
         selectMonth: function (yearNumber, monthNumber) {
-            this._selectedYear = yearNumber;
+
             this._selectedMonth = monthNumber;
             this._selectedWeek = this._getWeekFirstWeekOnMonth(yearNumber, monthNumber);
 
             if (yearNumber != this._selectedYear) {
-
+                this._selectedYear = yearNumber;
                 // The year changed
                 this._renderYearSection(yearNumber);
             }
 
             this._renderMonthSection(yearNumber, monthNumber);
             this._renderWeekSection(yearNumber, monthNumber);
+
+            this._trigger("selectweek", event, { yearNumber: this._selectedYear, monthNumber: this._selectedMonth, weekNumber: this._selectedWeek });
         },
-        selectWeek: function (yearNumber, monthNumber, weekNumber) {
+        selectWeek: function (event, yearNumber, monthNumber, weekNumber) {
             this._selectedYear = yearNumber;
             this._selectedMonth = monthNumber;
             this._selectedWeek = weekNumber;
 
-
+            this._trigger("selectweek", event, { yearNumber: yearNumber, monthNumber: monthNumber, weekNumber: weekNumber });
         },
         open: function () {
             this._isOpen = true;
