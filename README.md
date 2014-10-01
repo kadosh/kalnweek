@@ -9,6 +9,6 @@ If you want to contribute to the project, please let me know.
 
 
 Wish list for this widget:
-- i18n
+- Localization
 - Crossbrowser-tested
 - Animations on transitions
