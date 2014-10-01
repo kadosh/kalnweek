@@ -2,6 +2,11 @@ kalnweek provides a simple form to render a week picker. Please feel free to tak
 
 If you want to contribute to the project, please let me know.
 
+Example on fiddle: http://jsfiddle.net/sspbem9w/1/
+
+Screenshots: 
+
+Features
 * CSS-friendly (As almost everything today)
 * Support for constraints (start date and end date)
 * Developed using widget factory
