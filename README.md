@@ -1,5 +1,5 @@
 #Kalnweek
-kalnweek provides a simple form to render a week picker. Please feel free to take a look at the screenshots to see they way it looks like. Also, there's one that shows the way I implemented for the first time in a project for the first time.
+kalnweek provides a simple form to render a week picker. Take a look at the screenshots to see the way it looks like. Also, there's one that shows the way I implemented for the first time in a project for the first time.
 
 If you want to contribute to the project, please let me know.
 
